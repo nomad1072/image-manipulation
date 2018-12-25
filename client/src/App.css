@@ -32,3 +32,15 @@
 .header-content {
   margin-top: 0px;
 }
+
+.drop-content {
+  margin-left: 35vw;
+  margin-top: 5vh;
+  padding-top: 20px;
+}
+
+.failed-content {
+  margin-top: 20vh;
+  padding-top: 20px;
+  font-size: 12px;
+}
