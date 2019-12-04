@@ -1,47 +1,76 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const jimp = require('jimp');
+const axios = require('axios'); 
 const formidable = require('formidable');
 const path = require('path');
-const fs = require('fs');
+const fs = require('fs-extra');
+const uuid = require('uuid/v4');
+const { access_key, secret } = require('./index.js')
+const AWS = require('aws-sdk');
+const s3 = new AWS.S3({ accessKeyId: access_key, secretAccessKey: secret, signatureVersion: 'v4' });
 
 const port = process.env.PORT || 4000;
 const app = express();
-const router = express.Router();
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({extended: true}));
 const assets = path.join(__dirname, "output_pics");
 app.use(express.static(assets));
 
-
-app.post('/api/v1/transform_image', (req, res) => {
+app.post('/api/v1/upload', async (req, res) => {
     console.log('In controller')
     let form = new formidable.IncomingForm();
     form.parse(req, async (err, fields, files) => {  
         try {
-            let output_path = "";
+            const unique_id = uuid();
+            console.log('UUID: ', unique_id);
             const file = Object.keys(files);
-            let val = await jimp.read(files[file[0]].path);
-            let mask = await jimp.read(path.join(__dirname, 'pics', 'white.jpg'));
-            mask = await mask.resize(500, 500);
-            val = await val.resize(250, 400);
-            mask.composite(val, 120, 50);
-            output_path = path.join(__dirname, 'output_pics', files[file[0]].name);
-            name = files[file[0]].name;
-            await mask.write(output_path);
-            const rs = fs.createReadStream('output_path');
-            rs.pipe(res);
-            rs.on("error", () => {
-                return res.status(404).send({error: "File not generated"});
+            const file_path = files[file[0]].path;
+            const file_name = files[file[0]].name;
+            const file_bytes = fs.readFileSync(file_path, );
+            console.log('FIle Path: ', file_path);
+            console.log('FIles: <<<<<', files[file[0]]);
+            // const rs = fs.createReadStream(path.join(`${file_path}.pdf`));
+            // console.log('RS: ', rs);
+            const params = { Bucket: 's3-event-triggers', Key: `files/${unique_id}.pdf` }
+            
+            await s3.upload({ ...params, Body: file_bytes }).promise();
+            console.log('Uploaded');
+            // TODO: Send to rabbitmq
+            const ip = "10.202.121.62"
+            const rabbit_url = `http://${ip}:5000/api/v1/rabbitmq/${unique_id}/${file_name}`;
+            
+            // const bytes = await fs.readFile(file_path, 'binary');
+            // console.log('Bytes: ', bytes.toString());
+            console.log('Bytes: ', bytes);
+            const response = await axios.post(rabbit_url, bytes.toString('binary'))
+            console.log('Response: ', response.status);
+            return res.status(200).json({
+                uuid: unique_id
             })
-            // res.sendFile(output_path);
         } catch (e) {
             console.error(e);
             return res.status(404).send({error: e});
         }
     });
 });
+
+app.post('/api/v1/ping/:id', async (req, res) => {
+    console.log('Ping');
+    try {
+        const id = req.params.id;
+        // Ping Redis
+        console.log('Id: ', id);
+        const ip = "10.202.121.62"
+        const redis_url = `http://${ip}:5000/api/v1/redis/${id}`;
+        const response = await axios.get(redis_url);
+        console.log('Response: ', response.status);
+        return res.status(200).json({ status: 'incomplete' })
+    } catch(err) {
+        console.log('Error: ', err);
+    }
+});
+
 // app.use('/api/v1', router);
 
 const clientBuildPath = path.join(__dirname, "client", "build");
